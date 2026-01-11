@@ -9,6 +9,8 @@ from app.models import Quiz, QuizAttempt
 from app import schemas
 from app.scraper import scrape_wikipedia, validate_wikipedia_url
 from app.llm_quiz_generator import QuizGenerator
+from sqlalchemy import text
+
 
 app = FastAPI(
     title="AI Wiki Quiz Generator",
@@ -176,5 +178,6 @@ def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
 # -------------------- HEALTH --------------------
 @app.get("/health")
 def health(db: Session = Depends(get_db)):
-    db.execute("SELECT 1")
+    db.execute(text("SELECT 1"))
     return {"status": "healthy"}
+
