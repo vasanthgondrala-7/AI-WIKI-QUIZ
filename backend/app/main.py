@@ -1,16 +1,15 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import List
-import json  # ✅ REQUIRED
+import json
 
 from app.database import get_db
 from app.models import Quiz, QuizAttempt
 from app import schemas
 from app.scraper import scrape_wikipedia, validate_wikipedia_url
 from app.llm_quiz_generator import QuizGenerator
-from sqlalchemy import text
-
 
 app = FastAPI(
     title="AI Wiki Quiz Generator",
@@ -19,28 +18,25 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# -------------------- CORS --------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:5173",
-        "https://ai-wiki-quiz-plum.vercel.app/"
+        "https://ai-wiki-quiz-plum.vercel.app"  # ✅ NO TRAILING SLASH
     ],
-    allow_credentials=True,
+    allow_credentials=False,   # ✅ IMPORTANT
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 quiz_generator = QuizGenerator()
 
-# -------------------- ROOT --------------------
 @app.get("/")
 def root():
     return {"message": "AI Wiki Quiz Generator API"}
 
-# -------------------- GENERATE QUIZ --------------------
 @app.post("/generate-quiz", response_model=schemas.QuizResponse)
 def generate_quiz(
     quiz_request: schemas.QuizRequest,
@@ -49,6 +45,7 @@ def generate_quiz(
     if not validate_wikipedia_url(quiz_request.url):
         raise HTTPException(status_code=400, detail="Invalid Wikipedia URL")
 
+    # Cache check
     existing = db.query(Quiz).filter(Quiz.url == quiz_request.url).first()
     if existing:
         return {
@@ -84,7 +81,6 @@ def generate_quiz(
         **quiz_data.dict()
     }
 
-# -------------------- SUBMIT ATTEMPT --------------------
 @app.post(
     "/quizzes/{quiz_id}/attempt",
     response_model=schemas.QuizAttemptResponse
@@ -116,7 +112,7 @@ def submit_attempt(
         score=score,
         correct_answers=correct,
         total_questions=total,
-        user_answers=json.dumps(attempt.answers),  # ✅ FIXED
+        user_answers=json.dumps(attempt.answers),  # ✅ PostgreSQL safe
         time_taken=attempt.time_taken
     )
 
@@ -134,7 +130,6 @@ def submit_attempt(
         "answers": attempt.answers
     }
 
-# -------------------- QUIZ HISTORY --------------------
 @app.get("/quizzes", response_model=List[schemas.QuizHistory])
 def quiz_history(db: Session = Depends(get_db)):
     quizzes = db.query(Quiz).order_by(Quiz.date_generated.desc()).all()
@@ -156,7 +151,6 @@ def quiz_history(db: Session = Depends(get_db)):
 
     return result
 
-# -------------------- SINGLE QUIZ --------------------
 @app.get("/quizzes/{quiz_id}", response_model=schemas.QuizResponse)
 def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
     quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
@@ -175,9 +169,7 @@ def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
         "related_topics": data.get("related_topics", [])
     }
 
-# -------------------- HEALTH --------------------
 @app.get("/health")
 def health(db: Session = Depends(get_db)):
     db.execute(text("SELECT 1"))
     return {"status": "healthy"}
-
